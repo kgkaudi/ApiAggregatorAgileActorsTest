@@ -1,0 +1,885 @@
+{
+  "info": {
+    "name": "API Aggregator",
+    "description": "Postman collection for the API Aggregator service.\n\n1. Start the API (`dotnet run --project src/ApiAggregator.Api`).\n2. Check the `baseUrl` collection variable (default http://localhost:5000).\n3. Run any request; a JWT is fetched automatically. Or run the whole collection with the Collection Runner.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-login: fetch a JWT if we do not have one or it is about to expire.",
+          "const exp = Date.parse(pm.collectionVariables.get('tokenExpiresAt') || '') || 0;",
+          "if (pm.collectionVariables.get('token') && exp - Date.now() > 60000) { return; }",
+          "pm.sendRequest({",
+          "  url: pm.variables.replaceIn('{{baseUrl}}/api/auth/token'),",
+          "  method: 'POST',",
+          "  header: { 'Content-Type': 'application/json' },",
+          "  body: { mode: 'raw', raw: JSON.stringify({",
+          "    username: pm.variables.replaceIn('{{username}}'),",
+          "    password: pm.variables.replaceIn('{{password}}') }) }",
+          "}, (err, res) => {",
+          "  if (err || res.code !== 200) { console.warn('Auto-login failed', err || res.code); return; }",
+          "  const j = res.json();",
+          "  pm.collectionVariables.set('token', j.accessToken);",
+          "  pm.collectionVariables.set('tokenExpiresAt', j.expiresAt);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "username",
+      "value": "demo"
+    },
+    {
+      "key": "password",
+      "value": "demo-password"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "tokenExpiresAt",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Get token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Exchanges the demo credentials for a JWT. The token is stored in the {{token}} collection variable and used automatically by all other requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"Returns bearer token\", () => { pm.expect(j.accessToken).to.be.a(\"string\").and.not.empty; pm.expect(j.tokenType).to.eql(\"Bearer\"); });",
+                  "pm.collectionVariables.set(\"token\", j.accessToken);",
+                  "pm.collectionVariables.set(\"tokenExpiresAt\", j.expiresAt);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get token - wrong password (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"wrong\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aggregation without token (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Aggregation",
+      "item": [
+        {
+          "name": "Basic search (all sources)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Run twice: first call shows source status Live, second shows Cached (durationMs 0)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"Has items array and sources report\", () => { pm.expect(j.items).to.be.an(\"array\"); pm.expect(j.sources).to.be.an(\"array\").that.is.not.empty; });",
+                  "pm.test(\"Each source has a status\", () => j.sources.forEach(s => pm.expect([\"Live\",\"Cached\",\"Stale\",\"Failed\"]).to.include(s.status)));",
+                  "pm.test(\"Response time under 20s\", () => pm.expect(pm.response.responseTime).to.be.below(20000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Only Code category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&category=Code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "category",
+                  "value": "Code"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"All items are Code\", () => pm.response.json().items.forEach(i => pm.expect(i.category).to.eql(\"Code\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Only News, newest first",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&category=News&sortBy=Date&order=Desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "category",
+                  "value": "News"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "Date"
+                },
+                {
+                  "key": "order",
+                  "value": "Desc"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "pm.test(\"Sorted by date descending\", () => { for (let i = 1; i < items.length; i++) pm.expect(Date.parse(items[i-1].publishedAt)).to.be.at.least(Date.parse(items[i].publishedAt)); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sort by title ascending",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&sortBy=Title&order=Asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "Title"
+                },
+                {
+                  "key": "order",
+                  "value": "Asc"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"Has items array and sources report\", () => { pm.expect(j.items).to.be.an(\"array\"); pm.expect(j.sources).to.be.an(\"array\").that.is.not.empty; });",
+                  "pm.test(\"Each source has a status\", () => j.sources.forEach(s => pm.expect([\"Live\",\"Cached\",\"Stale\",\"Failed\"]).to.include(s.status)));",
+                  "pm.test(\"Response time under 20s\", () => pm.expect(pm.response.responseTime).to.be.below(20000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sort by relevance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&sortBy=Relevance&order=Desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "Relevance"
+                },
+                {
+                  "key": "order",
+                  "value": "Desc"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"Has items array and sources report\", () => { pm.expect(j.items).to.be.an(\"array\"); pm.expect(j.sources).to.be.an(\"array\").that.is.not.empty; });",
+                  "pm.test(\"Each source has a status\", () => j.sources.forEach(s => pm.expect([\"Live\",\"Cached\",\"Stale\",\"Failed\"]).to.include(s.status)));",
+                  "pm.test(\"Response time under 20s\", () => pm.expect(pm.response.responseTime).to.be.below(20000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Subset of sources (GitHub, Wikipedia)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&sources=GitHub,Wikipedia",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "sources",
+                  "value": "GitHub,Wikipedia"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Only requested sources queried\", () => { const n = pm.response.json().sources.map(s => s.source).sort(); pm.expect(n).to.eql([\"GitHub\",\"Wikipedia\"]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Date range filter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&from=2024-01-01T00:00:00Z&to=2030-01-01T00:00:00Z&sortBy=Date",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "from",
+                  "value": "2024-01-01T00:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2030-01-01T00:00:00Z"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "Date"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"All items inside range\", () => pm.response.json().items.forEach(i => { const d = Date.parse(i.publishedAt); pm.expect(d).to.be.at.least(Date.parse(\"2024-01-01T00:00:00Z\")); }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Paging - page 2, size 5",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&page=2&pageSize=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "page",
+                  "value": "2"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "5"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"Page metadata and size\", () => { pm.expect(j.page).to.eql(2); pm.expect(j.pageSize).to.eql(5); pm.expect(j.items.length).to.be.at.most(5); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Validation errors (expect 400)",
+      "item": [
+        {
+          "name": "Missing query",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Query too short",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=a",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "a"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown source",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&sources=Nope",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "sources",
+                  "value": "Nope"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Lists available sources\", () => pm.expect(pm.response.json().detail).to.include(\"Available\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "pageSize too large",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&pageSize=1000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "1000"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "from after to",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&from=2025-01-01T00:00:00Z&to=2024-01-01T00:00:00Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "from",
+                  "value": "2025-01-01T00:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2024-01-01T00:00:00Z"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid sortBy",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&sortBy=Banana",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "Banana"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Statistics",
+      "item": [
+        {
+          "name": "Request statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stats"
+              ]
+            },
+            "description": "Per external API: total requests, failures, average time and fast/average/slow buckets. Run some aggregation requests first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"Has thresholds and apis\", () => { pm.expect(j.thresholds.fastBelowMs).to.eql(100); pm.expect(j.apis).to.be.an(\"array\"); });",
+                  "pm.test(\"Bucket counts add up to total\", () => j.apis.forEach(a => pm.expect(a.buckets.fast.count + a.buckets.average.count + a.buckets.slow.count).to.eql(a.totalRequests)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stats without token (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stats"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
