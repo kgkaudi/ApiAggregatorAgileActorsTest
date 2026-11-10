@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "API Aggregator",
-    "description": "Postman collection for the API Aggregator service.\n\n1. Start the API (`dotnet run --project src/ApiAggregator.Api`).\n2. Check the `baseUrl` collection variable (default http://localhost:5000).\n3. Run any request; a JWT is fetched automatically. Or run the whole collection with the Collection Runner.",
+    "description": "Postman collection for the API Aggregator service.\n\n1. Start the API (`dotnet run --project src/ApiAggregator.Api`).\n2. Check the `baseUrl` variable (default http://localhost:5000). If you import the Local environment, it only defines baseUrl/username/password; do NOT add `token` to an environment (it would override the token the collection manages and cause 401s).\n3. Run any request; a JWT is fetched automatically. Or run the whole collection with the Collection Runner (the requests in the Caching folder depend on each other and must run in order).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -38,6 +38,15 @@
           "});"
         ]
       }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Responds within 20 s\", () => pm.expect(pm.response.responseTime).to.be.below(20000));"
+        ]
+      }
     }
   ],
   "variable": [
@@ -59,6 +68,14 @@
     },
     {
       "key": "tokenExpiresAt",
+      "value": ""
+    },
+    {
+      "key": "cacheTerm",
+      "value": ""
+    },
+    {
+      "key": "cacheLiveSources",
       "value": ""
     }
   ],
@@ -402,10 +419,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "pm.test(\"Has items array and sources report\", () => { pm.expect(j.items).to.be.an(\"array\"); pm.expect(j.sources).to.be.an(\"array\").that.is.not.empty; });",
-                  "pm.test(\"Each source has a status\", () => j.sources.forEach(s => pm.expect([\"Live\",\"Cached\",\"Stale\",\"Failed\"]).to.include(s.status)));",
-                  "pm.test(\"Response time under 20s\", () => pm.expect(pm.response.responseTime).to.be.below(20000));"
+                  "const titles = pm.response.json().items.map(i => i.title.toUpperCase());",
+                  "pm.test(\"Has items to compare\", () => pm.expect(titles.length).to.be.above(1));",
+                  "pm.test(\"Sorted by title ascending (case-insensitive)\", () => { for (let i = 1; i < titles.length; i++) pm.expect(titles[i-1] <= titles[i], titles[i-1] + \" <= \" + titles[i]).to.be.true; });"
                 ]
               }
             }
@@ -448,10 +464,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "pm.test(\"Has items array and sources report\", () => { pm.expect(j.items).to.be.an(\"array\"); pm.expect(j.sources).to.be.an(\"array\").that.is.not.empty; });",
-                  "pm.test(\"Each source has a status\", () => j.sources.forEach(s => pm.expect([\"Live\",\"Cached\",\"Stale\",\"Failed\"]).to.include(s.status)));",
-                  "pm.test(\"Response time under 20s\", () => pm.expect(pm.response.responseTime).to.be.below(20000));"
+                  "const items = pm.response.json().items;",
+                  "pm.test(\"Has items to compare\", () => pm.expect(items.length).to.be.above(1));",
+                  "pm.test(\"Sorted by relevance descending\", () => { for (let i = 1; i < items.length; i++) pm.expect(items[i-1].relevance).to.be.at.least(items[i].relevance); });",
+                  "pm.test(\"Relevance is between 0 and 1\", () => items.forEach(i => { pm.expect(i.relevance).to.be.within(0, 1); }));"
                 ]
               }
             }
@@ -490,7 +506,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Only requested sources queried\", () => { const n = pm.response.json().sources.map(s => s.source).sort(); pm.expect(n).to.eql([\"GitHub\",\"Wikipedia\"]); });"
+                  "const j = pm.response.json();",
+                  "pm.test(\"Only requested sources queried\", () => { const n = j.sources.map(s => s.source).sort(); pm.expect(n).to.eql([\"GitHub\",\"Wikipedia\"]); });",
+                  "pm.test(\"Every item comes from a requested source\", () => j.items.forEach(i => pm.expect([\"GitHub\",\"Wikipedia\"]).to.include(i.source)));"
                 ]
               }
             }
@@ -582,6 +600,193 @@
                   "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
                   "pm.test(\"Page metadata and size\", () => { pm.expect(j.page).to.eql(2); pm.expect(j.pageSize).to.eql(5); pm.expect(j.items.length).to.be.at.most(5); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Page past the last page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&page=1000&pageSize=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "page",
+                  "value": "1000"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"Page is empty but valid\", () => { pm.expect(j.items).to.be.empty; pm.expect(j.page).to.eql(1000); });",
+                  "pm.test(\"totalItems is still reported\", () => pm.expect(j.totalItems).to.be.a(\"number\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Category with no matches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query=dotnet&category=NoSuchCategory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "dotnet"
+                },
+                {
+                  "key": "category",
+                  "value": "NoSuchCategory"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"No items and total is 0\", () => { pm.expect(j.items).to.be.empty; pm.expect(j.totalItems).to.eql(0); });",
+                  "pm.test(\"Sources are still reported\", () => pm.expect(j.sources).to.be.an(\"array\").that.is.not.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Caching",
+      "description": "Run these two requests in order (or run the whole collection with the Collection Runner). The first uses a brand-new search term, so nothing can be cached yet. The second repeats it and asserts that every source that answered live is now served from the cache.",
+      "item": [
+        {
+          "name": "1. Prime the cache (new unique term)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query={{cacheTerm}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{cacheTerm}}"
+                }
+              ]
+            },
+            "description": "Generates a unique search term (stored in {{cacheTerm}}) and remembers which sources answered Live."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('cacheTerm', 'postman' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"A brand-new term is never served from cache\", () => j.sources.forEach(s => pm.expect(s.status).to.not.eql(\"Cached\")));",
+                  "const live = j.sources.filter(s => s.status === \"Live\").map(s => s.source);",
+                  "pm.collectionVariables.set(\"cacheLiveSources\", JSON.stringify(live));",
+                  "pm.test(\"At least one source answered live\", () => pm.expect(live.length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Same term again (served from cache)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/aggregation?query={{cacheTerm}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aggregation"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{cacheTerm}}"
+                }
+              ]
+            },
+            "description": "Must run right after request 1 (the cache lives for 2 minutes by default)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const live = JSON.parse(pm.collectionVariables.get(\"cacheLiveSources\") || \"[]\");",
+                  "pm.test(\"Sources that were live a moment ago are now Cached with no API call\", () => {",
+                  "  pm.expect(live, \"run request 1 first\").to.not.be.empty;",
+                  "  live.forEach(name => {",
+                  "    const s = j.sources.find(x => x.source === name);",
+                  "    pm.expect(s, name + \" is reported\").to.exist;",
+                  "    pm.expect(s.status, name + \" status\").to.eql(\"Cached\");",
+                  "    pm.expect(s.durationMs, name + \" durationMs\").to.eql(0);",
+                  "  });",
+                  "});"
                 ]
               }
             }
@@ -842,7 +1047,8 @@
                   "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
                   "pm.test(\"Has thresholds and apis\", () => { pm.expect(j.thresholds.fastBelowMs).to.eql(100); pm.expect(j.apis).to.be.an(\"array\"); });",
-                  "pm.test(\"Bucket counts add up to total\", () => j.apis.forEach(a => pm.expect(a.buckets.fast.count + a.buckets.average.count + a.buckets.slow.count).to.eql(a.totalRequests)));"
+                  "pm.test(\"Bucket counts add up to total\", () => j.apis.forEach(a => pm.expect(a.buckets.fast.count + a.buckets.average.count + a.buckets.slow.count).to.eql(a.totalRequests)));",
+                  "pm.test(\"Failures never exceed totals and averages are not negative\", () => j.apis.forEach(a => { pm.expect(a.failedRequests).to.be.at.most(a.totalRequests); pm.expect(a.averageResponseTimeMs).to.be.at.least(0); }));"
                 ]
               }
             }
