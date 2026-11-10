@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/ApiAggregator.sln", "--nologo"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["test", "${workspaceFolder}/ApiAggregator.sln", "--nologo"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "watch (run with hot reload)",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["watch", "run", "--project", "${workspaceFolder}/src/ApiAggregator.Api"],
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}
