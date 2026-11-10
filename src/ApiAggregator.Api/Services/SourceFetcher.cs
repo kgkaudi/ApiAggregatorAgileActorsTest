@@ -57,7 +57,8 @@ public sealed class SourceFetcher(
 
             try
             {
-                var items = await source.FetchAsync(term, cts.Token);
+                var items = await source.FetchAsync(term, cts.Token)
+                    .WaitAsync(opts.SourceTimeout, clock, CancellationToken.None);
                 var elapsed = Stopwatch.GetElapsedTime(started);
                 stats.Record(source.Name, elapsed, success: true);
 

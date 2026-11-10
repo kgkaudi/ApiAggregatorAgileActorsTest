@@ -25,9 +25,18 @@ public sealed class HackerNewsDataSource(HttpClient http, IOptions<AggregationOp
             Title = h.Title!,
             // "Ask HN" style posts have no external URL: link to the discussion instead.
             Url = string.IsNullOrWhiteSpace(h.Url) ? $"https://news.ycombinator.com/item?id={h.ObjectId}" : h.Url,
-            Description = $"by {h.Author} · points: {h.Points ?? 0}",
+            Description = Describe(h),
             PublishedAt = h.CreatedAt,
             Relevance = RelevanceScore.FromRank(i, hits.Count)
         }).ToList();
+    }
+
+    // Only mention the fields the API actually returned (no "by  · points: 0" for sparse stories).
+    private static string? Describe(HackerNewsHit hit)
+    {
+        var parts = new List<string>(2);
+        if (!string.IsNullOrWhiteSpace(hit.Author)) parts.Add($"by {hit.Author}");
+        if (hit.Points is { } points) parts.Add($"points: {points}");
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 }
